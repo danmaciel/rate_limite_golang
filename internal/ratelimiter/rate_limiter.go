@@ -2,10 +2,15 @@ package ratelimiter
 
 import (
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/danmaciel/rate_limite_golang/internal/entity"
 	"github.com/danmaciel/rate_limite_golang/internal/strategy"
+)
+
+var (
+	m = sync.Mutex{}
 )
 
 type RateLimiter struct {
@@ -31,13 +36,15 @@ func (r *RateLimiter) CheckIsBlocked(ip string, token string) bool {
 	rateLimitByToken := r.tokenRateLimit[token]
 	timeInBlacklistByToken := r.tokenBlackListTime[token]
 
-	r.RefreshValues(ip, r.maxRequisitionsByIp, 50)
-	r.RefreshValues(token, rateLimitByToken, 50)
+	m.Lock()
+	r.RefreshValues(ip, r.maxRequisitionsByIp, 1)
+	r.RefreshValues(token, rateLimitByToken, 1)
 
 	blockByIp, timeLastAccessByIp := r.checkBlockAndTime(ip, r.maxRequisitionsByIp)
 	blockByToken, timeLastAccessByToken := r.checkBlockAndTime(token, rateLimitByToken)
-
 	fmt.Printf("vai comparar o block: ip:%v, token: %v\n\n", blockByIp, blockByToken)
+	m.Unlock()
+
 	now := time.Now()
 	if rateLimitByToken > 0 {
 
@@ -47,7 +54,7 @@ func (r *RateLimiter) CheckIsBlocked(ip string, token string) bool {
 		if result {
 			print("**** block por token *****\n")
 		}
-
+		//m.Unlock()
 		return blockByToken && result
 	}
 
@@ -58,10 +65,10 @@ func (r *RateLimiter) CheckIsBlocked(ip string, token string) bool {
 		if result {
 			print("**** block por ip *****\n")
 		}
-
+		//m.Unlock()
 		return result
 	}
-
+	//m.Unlock()
 	return false
 }
 
