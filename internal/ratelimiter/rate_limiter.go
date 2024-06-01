@@ -1,7 +1,6 @@
 package ratelimiter
 
 import (
-	"fmt"
 	"sync"
 	"time"
 
@@ -18,10 +17,10 @@ type RateLimiter struct {
 	maxRequisitionsByIp    int
 	minutesInBlackListByIp int
 	tokenRateLimit         map[string]int
-	tokenBlackListTime     map[string]int
+	tokenBlackListTime     int
 }
 
-func NewRateLimiter(strategyPersistence strategy.PersistenceStrategy, maxRequisitionsByIp int, minutesInBlackListByIp int, tokenRateLimit map[string]int, tokenBlackListTime map[string]int) *RateLimiter {
+func NewRateLimiter(strategyPersistence strategy.PersistenceStrategy, maxRequisitionsByIp int, minutesInBlackListByIp int, tokenRateLimit map[string]int, tokenBlackListTime int) *RateLimiter {
 	return &RateLimiter{
 		persistence:            strategyPersistence,
 		maxRequisitionsByIp:    maxRequisitionsByIp,
@@ -34,7 +33,6 @@ func NewRateLimiter(strategyPersistence strategy.PersistenceStrategy, maxRequisi
 func (r *RateLimiter) CheckIsBlocked(ip string, token string) bool {
 
 	rateLimitByToken := r.tokenRateLimit[token]
-	timeInBlacklistByToken := r.tokenBlackListTime[token]
 
 	m.Lock()
 	r.RefreshValues(ip, r.maxRequisitionsByIp, 1)
@@ -42,19 +40,14 @@ func (r *RateLimiter) CheckIsBlocked(ip string, token string) bool {
 
 	blockByIp, timeLastAccessByIp := r.checkBlockAndTime(ip, r.maxRequisitionsByIp)
 	blockByToken, timeLastAccessByToken := r.checkBlockAndTime(token, rateLimitByToken)
-	fmt.Printf("vai comparar o block: ip:%v, token: %v\n\n", blockByIp, blockByToken)
 	m.Unlock()
 
 	now := time.Now()
 	if rateLimitByToken > 0 {
 
-		blackListMinute := time.Duration(timeInBlacklistByToken) * time.Minute
+		blackListMinute := time.Duration(r.tokenBlackListTime) * time.Minute
 		timeBlock := timeLastAccessByIp.Add(blackListMinute)
 		result := timeBlock.Compare(now) > 0
-		if result {
-			print("**** block por token *****\n")
-		}
-		//m.Unlock()
 		return blockByToken && result
 	}
 
@@ -62,13 +55,8 @@ func (r *RateLimiter) CheckIsBlocked(ip string, token string) bool {
 		blackListMinute := time.Duration(r.minutesInBlackListByIp) * time.Minute
 		timeBlock := timeLastAccessByToken.Add(blackListMinute)
 		result := timeBlock.Compare(now) > 0
-		if result {
-			print("**** block por ip *****\n")
-		}
-		//m.Unlock()
 		return result
 	}
-	//m.Unlock()
 	return false
 }
 
@@ -82,41 +70,22 @@ func (r *RateLimiter) RefreshValues(key string, maxBlocCount int, timeLimit int)
 		})
 		return
 	}
-	fmt.Printf("Achou chave: %v\n", key)
 
 	timeRef, _ := time.Parse(time.RFC3339, dataByIp.TimeExec)
-	fmt.Printf("TEmpo antes: %v\n", timeRef)
 	timeRef = timeRef.Add(time.Duration(timeLimit) * time.Second)
-	fmt.Printf("TEmpo depois: %v\n", timeRef)
-
-	fmt.Printf("tempo com regra: %v\n", timeRef)
-	fmt.Printf("Agora            %v\n", time.Now())
-	fmt.Printf("Resultado %v\n", timeRef.Compare(time.Now()) > 0)
-
-	fmt.Printf("Contador atual:  %v\n", dataByIp.Count)
-	fmt.Printf("Contador Bloc:   %v\n", maxBlocCount)
-	fmt.Printf("Validacao tempo: %v\n\n", timeRef.Compare(time.Now()) < 1)
-
-	/* if dataByIp.Count > maxBlocCount && timeRef.Compare(time.Now()) < 1 {
-		return
-	} */
 
 	var countUpdated int
 	var timeExecUpdated time.Time
 	now := time.Now()
 	timeExecOriginal, _ := time.Parse(time.RFC3339, dataByIp.TimeExec)
-	fmt.Printf(" # Vai incremetar: % v", timeRef.Compare(now) >= 0)
 	if now.Compare(timeRef) <= 0 {
-		fmt.Printf("\nincrementa de %v\n", dataByIp.Count)
 		countUpdated = dataByIp.Count + 1
 		timeExecUpdated = timeExecOriginal
 	} else {
-		print("\nZera\n")
 		countUpdated = 1
 		timeExecUpdated = now
 	}
 
-	fmt.Printf("Vai inserir tempo: %v\ncontador: %v\n\n", timeExecUpdated, countUpdated)
 	r.persistence.Delete(key)
 
 	r.persistence.Set(key, entity.DataRateLimiter{

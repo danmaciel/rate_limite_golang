@@ -1,7 +1,7 @@
 package main
 
 import (
-	"fmt"
+	"log"
 	"net/http"
 
 	"github.com/danmaciel/rate_limite_golang/configs"
@@ -15,7 +15,7 @@ import (
 func main() {
 	configs, err := configs.LoadConfig(".")
 	if err != nil {
-		panic(err)
+		log.Fatalf("Erro ao carregar configurações: %v", err)
 	}
 
 	tokenRateLimit := map[string]int{
@@ -23,13 +23,8 @@ func main() {
 		"BBB": 15,
 	}
 
-	tokenBlackListTime := map[string]int{
-		"AAA": 2,
-		"BBB": 3,
-	}
-
 	persistenc := persistence.NewRedisStrategy(configs.RedisAddress, configs.RedisPasswd, configs.RedisDBUsed)
-	rateLimite := ratelimiter.NewRateLimiter(persistenc, configs.MaxRequisitionsByIp, configs.BlackListMinutesByIp, tokenRateLimit, tokenBlackListTime)
+	rateLimite := ratelimiter.NewRateLimiter(persistenc, configs.MaxRequisitionsByIp, configs.BlackListMinutesByIp, tokenRateLimit, configs.BlackListMinutesByToken)
 	rateLimiteMid := rateMiddleware.NewRateLimiterMiddleware(rateLimite)
 
 	r := chi.NewRouter()
@@ -39,6 +34,9 @@ func main() {
 	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("Hello World!"))
 	})
-	fmt.Printf("Server calling in http://localhost:%v\n", configs.WebServerPort)
-	http.ListenAndServe(configs.WebServerPort, r)
+
+	log.Printf("Servidor iniciado em http://localhost:%v\n", configs.WebServerPort)
+	if err := http.ListenAndServe(configs.WebServerPort, r); err != nil {
+		log.Fatalf("Erro ao iniciar servidor: %v", err)
+	}
 }

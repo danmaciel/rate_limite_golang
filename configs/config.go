@@ -8,12 +8,13 @@ import (
 )
 
 type conf struct {
-	WebServerPort        string `mapstructure:"WEB_SERVER_PORT"`
-	MaxRequisitionsByIp  int    `mapstructure:"MAX_REQUISITIONS_BY_IP"`
-	BlackListMinutesByIp int    `mapstructure:"BLACK_LIST_MINUTES_BY_IP"`
-	RedisAddress         string `mapstructure:"REDIS_ADDR"`
-	RedisPasswd          string `mapstructure:"REDIS_PASSWD"`
-	RedisDBUsed          int    `mapstructure:"REDIS_DB"`
+	WebServerPort           string `mapstructure:"WEB_SERVER_PORT"`
+	MaxRequisitionsByIp     int    `mapstructure:"MAX_REQUISITIONS_BY_IP"`
+	BlackListMinutesByIp    int    `mapstructure:"BLACK_LIST_MINUTES_BY_IP"`
+	BlackListMinutesByToken int    `mapstructure:"BLACK_LIST_MINUTES_BY_TOKEN"`
+	RedisAddress            string `mapstructure:"REDIS_ADDR"`
+	RedisPasswd             string `mapstructure:"REDIS_PASSWD"`
+	RedisDBUsed             int    `mapstructure:"REDIS_DB"`
 }
 
 func LoadConfig(path string) (*conf, error) {

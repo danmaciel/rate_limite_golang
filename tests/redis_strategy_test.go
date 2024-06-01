@@ -40,11 +40,6 @@ func TestNoBlockByIpStrategy(t *testing.T) {
 		"BBB": 15,
 	}
 
-	tokenBlackListTime := map[string]int{
-		"AAA": 2,
-		"BBB": 3,
-	}
-
 	const (
 		redisAddress  = ":6379"
 		redisPasswdDB = ""
@@ -54,7 +49,7 @@ func TestNoBlockByIpStrategy(t *testing.T) {
 	)
 
 	persistenc := persistence.NewRedisStrategy(redisAddress, redisPasswdDB, redisDB)
-	rateLimite := ratelimiter.NewRateLimiter(persistenc, 3, 2, tokenRateLimit, tokenBlackListTime)
+	rateLimite := ratelimiter.NewRateLimiter(persistenc, 3, 2, tokenRateLimit, 2)
 
 	result := rateLimite.CheckIsBlocked(ip, token)
 
@@ -69,11 +64,6 @@ func TestBlockByIpStrategy(t *testing.T) {
 		"BBB": 15,
 	}
 
-	tokenBlackListTime := map[string]int{
-		"AAA": 2,
-		"BBB": 3,
-	}
-
 	const (
 		redisAddress  = ":6379"
 		redisPasswdDB = ""
@@ -83,7 +73,7 @@ func TestBlockByIpStrategy(t *testing.T) {
 	)
 
 	persistenc := persistence.NewRedisStrategy(redisAddress, redisPasswdDB, redisDB)
-	rateLimite := ratelimiter.NewRateLimiter(persistenc, 5, 1, tokenRateLimit, tokenBlackListTime)
+	rateLimite := ratelimiter.NewRateLimiter(persistenc, 5, 1, tokenRateLimit, 2)
 
 	var wg sync.WaitGroup
 
@@ -112,11 +102,6 @@ func TestBlockByIp2Strategy(t *testing.T) {
 		"BBB": 15,
 	}
 
-	tokenBlackListTime := map[string]int{
-		"AAA": 2,
-		"BBB": 3,
-	}
-
 	const (
 		redisAddress  = ":6379"
 		redisPasswdDB = ""
@@ -126,7 +111,7 @@ func TestBlockByIp2Strategy(t *testing.T) {
 	)
 
 	persistenc := persistence.NewRedisStrategy(redisAddress, redisPasswdDB, redisDB)
-	rateLimite := ratelimiter.NewRateLimiter(persistenc, 5, 1, tokenRateLimit, tokenBlackListTime)
+	rateLimite := ratelimiter.NewRateLimiter(persistenc, 5, 1, tokenRateLimit, 2)
 
 	var wg sync.WaitGroup
 
@@ -164,11 +149,6 @@ func TestBlockByIp3Strategy(t *testing.T) {
 		"BBB": 15,
 	}
 
-	tokenBlackListTime := map[string]int{
-		"AAA": 2,
-		"BBB": 3,
-	}
-
 	const (
 		redisAddress  = ":6379"
 		redisPasswdDB = ""
@@ -178,7 +158,7 @@ func TestBlockByIp3Strategy(t *testing.T) {
 	)
 
 	persistenc := persistence.NewRedisStrategy(redisAddress, redisPasswdDB, redisDB)
-	rateLimite := ratelimiter.NewRateLimiter(persistenc, 5, 1, tokenRateLimit, tokenBlackListTime)
+	rateLimite := ratelimiter.NewRateLimiter(persistenc, 5, 1, tokenRateLimit, 2)
 
 	var wg sync.WaitGroup
 
@@ -203,11 +183,6 @@ func TestBlockByTokenStrategy(t *testing.T) {
 		"BBB": 15,
 	}
 
-	tokenBlackListTime := map[string]int{
-		"AAA": 2,
-		"BBB": 3,
-	}
-
 	const (
 		redisAddress  = ":6379"
 		redisPasswdDB = ""
@@ -217,7 +192,7 @@ func TestBlockByTokenStrategy(t *testing.T) {
 	)
 
 	persistenc := persistence.NewRedisStrategy(redisAddress, redisPasswdDB, redisDB)
-	rateLimite := ratelimiter.NewRateLimiter(persistenc, 3, 2, tokenRateLimit, tokenBlackListTime)
+	rateLimite := ratelimiter.NewRateLimiter(persistenc, 3, 2, tokenRateLimit, 2)
 
 	var wg sync.WaitGroup
 
