@@ -1,27 +1,7 @@
 version: "3"
 
 services:
-  goapp:
-    build: .
-    environment:
-      - GO_ENV=production
-    ports:
-      - "8080:8080"
-    depends_on:
-      - redis
-    networks:
-      - mynetwork
-    deploy:
-      resources:
-        limits:
-          cpus: "1.0"
-          memory: "512M"
-
   redis:
     image: redis:latest
     ports:
       - "6379:6379"
-
-networks:
-  mynetwork:
-    driver: bridge
