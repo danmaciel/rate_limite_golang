@@ -38,5 +38,15 @@ func LoadConfig(path string) (*conf, error) {
 		cfg.MaxRequisitionsByIp = ipLimitByOs
 	}
 
+	blackListMinuteIpByOs, _ := strconv.Atoi(os.Getenv("BLACK_LIST_MINUTES_BY_IP"))
+	if blackListMinuteIpByOs != 0 {
+		cfg.BlackListMinutesByIp = blackListMinuteIpByOs
+	}
+
+	blackListMinuteTokenByOs, _ := strconv.Atoi(os.Getenv("BLACK_LIST_MINUTES_BY_TOKEN"))
+	if blackListMinuteTokenByOs != 0 {
+		cfg.BlackListMinutesByToken = blackListMinuteTokenByOs
+	}
+
 	return cfg, err
 }
