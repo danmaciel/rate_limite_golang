@@ -23,6 +23,14 @@ func (rlm *RateLimiteMiddleware) Handler(next http.Handler) http.Handler {
 		token := r.Header.Get("API_KEY")
 		ip := strings.Split(r.RemoteAddr, ":")[0]
 
+		if len(ip) == 0 {
+			ip = "127.0.0.1"
+		}
+
+		if len(token) < 3 {
+			ip = "127.0.0.1"
+		}
+
 		if rlm.rateLimiter.CheckIsBlocked(ip, token) {
 			http.Error(w, "you have reached the maximum number of requests or actions allowed within a certain time frame", http.StatusTooManyRequests)
 			return

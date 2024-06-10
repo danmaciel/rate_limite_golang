@@ -1,7 +1,31 @@
 version: "3"
 
+networks:
+  mynetwork:
+
 services:
   redis:
     image: redis:latest
     ports:
       - "6379:6379"
+    networks:
+      - mynetwork
+
+  app-ratelimiter:
+    build: .
+    ports:
+      - "8080:8080"
+    depends_on:
+      - redis
+    networks:
+      - mynetwork
+    command: >
+      sh -c '
+        apk add --no-cache redis && # Instala o redis-cli no contêiner
+        while ! redis-cli -h redis -p 6379 ping > /dev/null 2>&1; do
+          echo "Aguardando o Redis..." &&
+          sleep 1
+        done &&
+        echo "Redis conectado!" &&
+        ./app
+      '

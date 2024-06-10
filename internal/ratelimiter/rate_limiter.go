@@ -8,16 +8,13 @@ import (
 	"github.com/danmaciel/rate_limite_golang/internal/strategy"
 )
 
-var (
-	m = sync.Mutex{}
-)
-
 type RateLimiter struct {
 	persistence            strategy.PersistenceStrategy
 	maxRequisitionsByIp    int
 	minutesInBlackListByIp int
 	tokenRateLimit         map[string]int
 	tokenBlackListTime     int
+	m                      sync.Mutex
 }
 
 func NewRateLimiter(strategyPersistence strategy.PersistenceStrategy, maxRequisitionsByIp int, minutesInBlackListByIp int, tokenRateLimit map[string]int, tokenBlackListTime int) *RateLimiter {
@@ -33,41 +30,35 @@ func NewRateLimiter(strategyPersistence strategy.PersistenceStrategy, maxRequisi
 func (r *RateLimiter) CheckIsBlocked(ip string, token string) bool {
 
 	rateLimitByToken := r.tokenRateLimit[token]
+	r.m.Lock()
+	defer r.m.Unlock()
 
-	m.Lock()
-	r.RefreshValues(ip, r.maxRequisitionsByIp, 1)
-	r.RefreshValues(token, rateLimitByToken, 1)
-
-	blockByIp, timeLastAccessByIp := r.checkBlockAndTime(ip, r.maxRequisitionsByIp)
-	blockByToken, timeLastAccessByToken := r.checkBlockAndTime(token, rateLimitByToken)
-	m.Unlock()
-
-	now := time.Now()
 	if rateLimitByToken > 0 {
-
-		blackListMinute := time.Duration(r.tokenBlackListTime) * time.Minute
-		timeBlock := timeLastAccessByIp.Add(blackListMinute)
-		result := timeBlock.Compare(now) > 0
-		return blockByToken && result
+		r.RefreshValues(token, rateLimitByToken, 1)
+		blockByToken := r.checkBlockAndTime(token, rateLimitByToken, r.tokenBlackListTime)
+		return blockByToken
 	}
 
-	if blockByIp {
-		blackListMinute := time.Duration(r.minutesInBlackListByIp) * time.Minute
-		timeBlock := timeLastAccessByToken.Add(blackListMinute)
-		result := timeBlock.Compare(now) > 0
-		return result
-	}
-	return false
+	r.RefreshValues(ip, r.maxRequisitionsByIp, 1)
+	blockByIp := r.checkBlockAndTime(ip, r.maxRequisitionsByIp, r.minutesInBlackListByIp)
+
+	return blockByIp
 }
 
 func (r *RateLimiter) RefreshValues(key string, maxBlocCount int, timeLimit int) {
+
 	var dataByIp entity.DataRateLimiter
 	err := r.persistence.Get(key, &dataByIp)
 	if err != nil {
 		r.persistence.Set(key, entity.DataRateLimiter{
-			Count:    1,
-			TimeExec: time.Now().Format(time.RFC3339),
+			Count:       1,
+			TimeExec:    time.Now().Format(time.RFC3339),
+			InBlackList: false,
 		})
+		return
+	}
+
+	if dataByIp.InBlackList {
 		return
 	}
 
@@ -89,18 +80,35 @@ func (r *RateLimiter) RefreshValues(key string, maxBlocCount int, timeLimit int)
 	r.persistence.Delete(key)
 
 	r.persistence.Set(key, entity.DataRateLimiter{
-		Count:    countUpdated,
-		TimeExec: timeExecUpdated.Format(time.RFC3339),
+		Count:       countUpdated,
+		TimeExec:    timeExecUpdated.Format(time.RFC3339),
+		InBlackList: countUpdated > maxBlocCount || dataByIp.InBlackList,
 	})
 }
 
-func (r *RateLimiter) checkBlockAndTime(key string, countByBlock int) (bool, time.Time) {
+func (r *RateLimiter) checkBlockAndTime(key string, countByBlock int, blackListTime int) bool {
+
 	var data entity.DataRateLimiter
 	err := r.persistence.Get(key, &data)
 	if err != nil {
-		return false, time.Now()
+		return false
 	}
 
-	t, _ := time.Parse(time.RFC3339, data.TimeExec)
-	return data.Count > countByBlock, t
+	if data.InBlackList {
+		t, _ := time.Parse(time.RFC3339, data.TimeExec)
+		timeBlock := t.Add(time.Duration(blackListTime) * time.Minute)
+		result := timeBlock.Compare(time.Now()) > 0
+
+		if !result {
+			r.persistence.Set(key, entity.DataRateLimiter{
+				Count:       data.Count,
+				TimeExec:    data.TimeExec,
+				InBlackList: false,
+			})
+		}
+
+		return result
+	}
+
+	return data.Count > countByBlock
 }

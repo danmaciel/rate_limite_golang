@@ -20,5 +20,3 @@ WORKDIR /app
 
 COPY --from=builder /app/app /app/app
 COPY --from=builder /app/.env /app/.env
-
-CMD ["./app"]

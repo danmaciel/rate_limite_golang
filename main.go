@@ -1,8 +1,12 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	"time"
 
 	"github.com/danmaciel/rate_limite_golang/configs"
 	"github.com/danmaciel/rate_limite_golang/internal/infra/persistence"
@@ -13,6 +17,13 @@ import (
 )
 
 func main() {
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt)
+
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer cancel()
+
 	configs, err := configs.LoadConfig(".")
 	if err != nil {
 		log.Fatalf("Erro ao carregar configurações: %v", err)
@@ -35,8 +46,20 @@ func main() {
 		w.Write([]byte("Hello World!"))
 	})
 
-	log.Printf("Servidor iniciado em http://localhost:%v\n", configs.WebServerPort)
-	if err := http.ListenAndServe(configs.WebServerPort, r); err != nil {
-		log.Fatalf("Erro ao iniciar servidor: %v", err)
+	go func() {
+		log.Printf("Servidor iniciado em http://localhost:%v\n", configs.WebServerPort)
+		if err := http.ListenAndServe(configs.WebServerPort, r); err != nil {
+			log.Fatalf("Erro ao iniciar servidor: %v", err)
+		}
+	}()
+
+	select {
+	case <-sigCh:
+		log.Println("Shutting down gracefully, CTRL+C pressed...")
+	case <-ctx.Done():
+		log.Println("Shutting down due to other reason...")
 	}
+
+	_, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer shutdownCancel()
 }
