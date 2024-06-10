@@ -7,13 +7,13 @@ Para rodar o projeto é necessário o Docker e Go instalados e configurados prev
 
 ## Como usar?
 
-Entre na raiz do projeto e execute o seguinte comando subir o Redis via Docker:
+Entre na raiz do projeto e execute o seguinte comando subir o Redis e a aplicação via Docker:
 
 ```
 docker-compose up
 ```
 
-Se tudo estiver der certp, a aplicação  responderá em http://localhost:8080
+Se tudo estiver der certo, a aplicação responderá em http://localhost:8080
 
 ## Como Funciona?
 
