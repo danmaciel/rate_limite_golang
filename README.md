@@ -13,12 +13,6 @@ Entre na raiz do projeto e execute o seguinte comando subir o Redis via Docker:
 docker-compose up
 ```
 
-Depois, ainda na raiz da aplicação, execute no terminal o comando abaixo para subir a aplicação por padrao na porta 8080
-
-```
-go run main.go
-```
-
 Se tudo estiver der certp, a aplicação  responderá em http://localhost:8080
 
 ## Como Funciona?
