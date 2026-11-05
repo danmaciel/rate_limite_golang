@@ -49,6 +49,18 @@ func TestNoBlockByIpStrategy(t *testing.T) {
 	)
 
 	persistenc := persistence.NewRedisStrategy(redisAddress, redisPasswdDB, redisDB)
+
+	// Tests share the Redis service across normal and race-enabled runs.
+	// Remove only this test's limiter keys to avoid stale temporary blocks.
+	key := "ip:" + ip
+	if tokenRateLimit[token] > 0 {
+		key = "token:" + token
+	}
+	for _, prefix := range []string{"ratelimit:v2:count:", "ratelimit:v2:block:"} {
+		if err := persistenc.Delete(prefix + key); err != nil {
+			t.Fatal(err)
+		}
+	}
 	rateLimite := ratelimiter.NewRateLimiter(persistenc, 3, 2, tokenRateLimit, 2)
 
 	result := rateLimite.CheckIsBlocked(ip, token)
@@ -73,6 +85,18 @@ func TestBlockByIpStrategy(t *testing.T) {
 	)
 
 	persistenc := persistence.NewRedisStrategy(redisAddress, redisPasswdDB, redisDB)
+
+	// Tests share the Redis service across normal and race-enabled runs.
+	// Remove only this test's limiter keys to avoid stale temporary blocks.
+	key := "ip:" + ip
+	if tokenRateLimit[token] > 0 {
+		key = "token:" + token
+	}
+	for _, prefix := range []string{"ratelimit:v2:count:", "ratelimit:v2:block:"} {
+		if err := persistenc.Delete(prefix + key); err != nil {
+			t.Fatal(err)
+		}
+	}
 	rateLimite := ratelimiter.NewRateLimiter(persistenc, 5, 1, tokenRateLimit, 2)
 
 	var wg sync.WaitGroup
@@ -111,6 +135,18 @@ func TestBlockByIp2Strategy(t *testing.T) {
 	)
 
 	persistenc := persistence.NewRedisStrategy(redisAddress, redisPasswdDB, redisDB)
+
+	// Tests share the Redis service across normal and race-enabled runs.
+	// Remove only this test's limiter keys to avoid stale temporary blocks.
+	key := "ip:" + ip
+	if tokenRateLimit[token] > 0 {
+		key = "token:" + token
+	}
+	for _, prefix := range []string{"ratelimit:v2:count:", "ratelimit:v2:block:"} {
+		if err := persistenc.Delete(prefix + key); err != nil {
+			t.Fatal(err)
+		}
+	}
 	rateLimite := ratelimiter.NewRateLimiter(persistenc, 5, 1, tokenRateLimit, 2)
 
 	var wg sync.WaitGroup
@@ -158,6 +194,18 @@ func TestBlockByIp3Strategy(t *testing.T) {
 	)
 
 	persistenc := persistence.NewRedisStrategy(redisAddress, redisPasswdDB, redisDB)
+
+	// Tests share the Redis service across normal and race-enabled runs.
+	// Remove only this test's limiter keys to avoid stale temporary blocks.
+	key := "ip:" + ip
+	if tokenRateLimit[token] > 0 {
+		key = "token:" + token
+	}
+	for _, prefix := range []string{"ratelimit:v2:count:", "ratelimit:v2:block:"} {
+		if err := persistenc.Delete(prefix + key); err != nil {
+			t.Fatal(err)
+		}
+	}
 	rateLimite := ratelimiter.NewRateLimiter(persistenc, 5, 1, tokenRateLimit, 2)
 
 	var wg sync.WaitGroup
@@ -192,6 +240,18 @@ func TestBlockByTokenStrategy(t *testing.T) {
 	)
 
 	persistenc := persistence.NewRedisStrategy(redisAddress, redisPasswdDB, redisDB)
+
+	// Tests share the Redis service across normal and race-enabled runs.
+	// Remove only this test's limiter keys to avoid stale temporary blocks.
+	key := "ip:" + ip
+	if tokenRateLimit[token] > 0 {
+		key = "token:" + token
+	}
+	for _, prefix := range []string{"ratelimit:v2:count:", "ratelimit:v2:block:"} {
+		if err := persistenc.Delete(prefix + key); err != nil {
+			t.Fatal(err)
+		}
+	}
 	rateLimite := ratelimiter.NewRateLimiter(persistenc, 3, 2, tokenRateLimit, 2)
 
 	var wg sync.WaitGroup
