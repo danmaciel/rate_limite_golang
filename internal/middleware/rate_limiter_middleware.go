@@ -1,8 +1,8 @@
 package middleware
 
 import (
+	"net"
 	"net/http"
-	"strings"
 
 	"github.com/danmaciel/rate_limite_golang/internal/strategy"
 )
@@ -12,30 +12,35 @@ type RateLimiteMiddleware struct {
 }
 
 func NewRateLimiterMiddleware(r strategy.RateLimiterStrategy) *RateLimiteMiddleware {
-	return &RateLimiteMiddleware{
-		rateLimiter: r,
+	return &RateLimiteMiddleware{rateLimiter: r}
+}
+
+// clientIP uses the direct peer address; untrusted forwarding headers are ignored.
+// Proxy deployments must enforce a separate trusted-proxy boundary before using forwarded IPs.
+func clientIP(remoteAddr string) (string, bool) {
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		return "", false
 	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return "", false
+	}
+	return ip.String(), true
 }
 
 func (rlm *RateLimiteMiddleware) Handler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-
-		token := r.Header.Get("API_KEY")
-		ip := strings.Split(r.RemoteAddr, ":")[0]
-
-		if len(ip) == 0 {
-			ip = "127.0.0.1"
-		}
-
-		if len(token) < 3 {
-			ip = "127.0.0.1"
-		}
-
-		if rlm.rateLimiter.CheckIsBlocked(ip, token) {
-			http.Error(w, "you have reached the maximum number of requests or actions allowed within a certain time frame", http.StatusTooManyRequests)
+		ip, ok := clientIP(r.RemoteAddr)
+		if !ok {
+			http.Error(w, "invalid remote address", http.StatusBadRequest)
 			return
 		}
 
-		next.ServeHTTP(w, r.WithContext(r.Context()))
+		if rlm.rateLimiter.CheckIsBlocked(ip, r.Header.Get("API_KEY")) {
+			http.Error(w, "you have reached the maximum number of requests or actions allowed within a certain time frame", http.StatusTooManyRequests)
+			return
+		}
+		next.ServeHTTP(w, r)
 	})
 }
