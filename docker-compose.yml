@@ -7,7 +7,7 @@ services:
   redis:
     image: redis:latest
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     networks:
       - mynetwork
 
@@ -15,6 +15,14 @@ services:
     build: .
     ports:
       - "8080:8080"
+    environment:
+      WEB_SERVER_PORT: ":8080"
+      MAX_REQUISITIONS_BY_IP: ${MAX_REQUISITIONS_BY_IP:-5}
+      BLACK_LIST_MINUTES_BY_IP: ${BLACK_LIST_MINUTES_BY_IP:-2}
+      BLACK_LIST_MINUTES_BY_TOKEN: ${BLACK_LIST_MINUTES_BY_TOKEN:-2}
+      REDIS_ADDR: redis:6379
+      REDIS_PASSWD: ${REDIS_PASSWD:-}
+      REDIS_DB: 0
     depends_on:
       - redis
     networks:
