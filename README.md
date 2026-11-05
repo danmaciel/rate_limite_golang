@@ -23,7 +23,7 @@ flowchart LR
 
 A aplicação consulta as regras no `RateLimiter`. Há dois exemplos de tokens configurados em `main.go`: `AAA` (10 requisições) e `BBB` (15 requisições). Tokens não configurados seguem o caminho de limitação por IP. Esses tokens são **identificadores de demonstração**, não credenciais seguras de autenticação.
 
-O contador é persistido no Redis. O código atual mantém um `sync.Mutex` em memória por instância para serializar o processamento local, mas o padrão de leitura/remoção/escrita no Redis não é atômico entre réplicas.
+O contador agora é incrementado **atomicamente pelo Redis** usando um script Lua, com TTL na janela fixa de **1 segundo** e chave separada para bloqueio temporário. Isso mantém uma cota compartilhada mesmo quando a aplicação roda em diferentes instâncias que utilizam o mesmo Redis.
 
 ## Executar com Docker Compose
 
@@ -69,12 +69,12 @@ Use [`.env.example`](.env.example) como referência e mantenha seu `.env` fora d
 
 ## Decisões e limitações
 
-1. **Concorrência entre réplicas:** as operações de contagem no Redis não são atômicas entre processos. Uma evolução pode usar comandos atômicos ou script Lua com expiração.
-2. **Endereço do cliente:** a extração atual do IP usa `RemoteAddr` e uma lógica de fallback para tokens curtos que pode agrupar clientes incorretamente. Deve ser corrigida e testada antes de expor atrás de proxies ou balanceadores.
+1. **Concorrência entre réplicas:** as operações de contagem e bloqueio passaram a ser atômicas via script Lua no Redis; testes exercitam dois limitadores com conexões independentes. Ainda faltam testes de carga, comportamento sob falhas de Redis e ambientes distribuídos reais.
+2. **Endereço do cliente:** o middleware extrai IPv4 e IPv6 por `net.SplitHostPort`/`net.ParseIP`, sem substituir IPs por localhost para tokens curtos. **Headers `X-Forwarded-For` e `X-Real-IP` não são confiados** para impedir falsificação. Se o serviço estiver atrás de proxy ou load balancer, a limitação será pelo endereço do proxy até implementar uma cadeia explícita de proxies confiáveis.
 3. **Segurança dos tokens:** o header `API_KEY` apenas seleciona uma regra conhecida. Não constitui autenticação ou validação de chaves.
-4. **Tratamento de falhas:** erros de acesso ao Redis e política de indisponibilidade (*fail-open* / *fail-closed*) precisam de uma decisão explícita.
-5. **Tempo e expiração:** a solução usa timestamps e bloqueios implementados no código. Vale avaliar TTL no Redis, precisão temporal e testes com relógio controlado.
-6. **Operação:** o exemplo não demonstra métricas, tracing, testes de carga ou ambientes com múltiplas réplicas.
+4. **Tratamento de falhas:** a indisponibilidade do Redis resulta em **fail-closed** (HTTP 429), priorizando não contornar o limite. Isso pode bloquear usuários legítimos, portanto requer observabilidade e decisão de produto para uso real.
+5. **Tempo e expiração:** a nova implementação utiliza uma **janela fixa de 1 segundo** e TTLs Redis para bloqueios. A janela não é deslizante; limites podem ser atravessados em rajadas na fronteira entre janelas.
+6. **Operação:** o exemplo não demonstra métricas, tracing, testes de carga ou implantação com múltiplas réplicas. A chave de Redis tem prefixos distintos para IP/token, e o cabeçalho `API_KEY` continua sendo apenas um seletor de cota, não autenticação.
 
 Esses pontos representam oportunidades de evolução do projeto, sem alegar capacidades ainda não implementadas.
 
