@@ -67,6 +67,41 @@ Use [`.env.example`](.env.example) como referência e mantenha seu `.env` fora d
 - `go test ./...` — testes, incluindo cenários de persistência Redis.
 - [GitHub Actions](.github/workflows/ci.yml) executa as verificações acima com Redis disponível no job.
 
+## Métricas e teste de concorrência
+
+A aplicação expõe um endpoint de **diagnóstico JSON** em `http://127.0.0.1:9090/`, vinculado **somente ao loopback** do processo. Por padrão, ele não pode ser acessado diretamente de fora do contêiner. A rota não faz parte da API pública e não é instrumentada pelo rate limiter.
+
+Exemplo de resposta (valores ilustrativos):
+
+```json
+{
+  "requests_total": 100,
+  "allowed_total": 5,
+  "blocked_total": 95,
+  "invalid_remote_addr_total": 0,
+  "duration_total_microseconds": 24000,
+  "duration_buckets": {
+    "le_5ms": 85,
+    "le_20ms": 12,
+    "le_100ms": 3,
+    "le_500ms": 0,
+    "gt_500ms": 0
+  }
+}
+```
+
+As contagens são mantidas **em memória, por instância**: não são persistidas no Redis nem agregadas entre réplicas. Os buckets de latência são faixas **exclusivas** do tempo do middleware; o total dos buckets corresponde ao total de requisições. O campo `allowed_total` significa que o rate limiter **permitiu continuar**, e não que o endpoint final respondeu com HTTP 200. A métrica `blocked_total` reúne limitação e erros de Redis (política *fail-closed*).
+
+Para executar uma verificação de carga local, inicie Redis e a aplicação e execute:
+
+```bash
+python3 scripts/load_test.py --requests 400 --concurrency 20
+```
+
+O script usa somente bibliotecas padrão do Python, relata requisições por segundo, HTTP 200/429, p50/p95 e verifica coerência entre métricas e resultados. O CI executa esse cenário com Redis local e `go test -race ./...`.
+
+**Interpretação:** isso é um teste de concorrência e regressão funcional, **não** um benchmark de capacidade de produção nem uma garantia de SLO. As medidas dependem do runner do GitHub e da configuração local. Antes de tirar conclusões de performance, realize ensaios mais longos em ambiente controlado, com carga distribuída e métricas de infraestrutura.
+
 ## Decisões e limitações
 
 1. **Concorrência entre réplicas:** as operações de contagem e bloqueio passaram a ser atômicas via script Lua no Redis; testes exercitam dois limitadores com conexões independentes. Ainda faltam testes de carga, comportamento sob falhas de Redis e ambientes distribuídos reais.
@@ -74,7 +109,7 @@ Use [`.env.example`](.env.example) como referência e mantenha seu `.env` fora d
 3. **Segurança dos tokens:** o header `API_KEY` apenas seleciona uma regra conhecida. Não constitui autenticação ou validação de chaves.
 4. **Tratamento de falhas:** a indisponibilidade do Redis resulta em **fail-closed** (HTTP 429), priorizando não contornar o limite. Isso pode bloquear usuários legítimos, portanto requer observabilidade e decisão de produto para uso real.
 5. **Tempo e expiração:** a nova implementação utiliza uma **janela fixa de 1 segundo** e TTLs Redis para bloqueios. A janela não é deslizante; limites podem ser atravessados em rajadas na fronteira entre janelas.
-6. **Operação:** o exemplo não demonstra métricas, tracing, testes de carga ou implantação com múltiplas réplicas. A chave de Redis tem prefixos distintos para IP/token, e o cabeçalho `API_KEY` continua sendo apenas um seletor de cota, não autenticação.
+6. **Operação:** agora há contadores e buckets de latência locais por instância, além de um cenário automatizado de concorrência. Ainda faltam tracing, métricas agregadas, ensaios de longa duração e implantação real com múltiplas réplicas. A chave de Redis tem prefixos distintos para IP/token, e o cabeçalho `API_KEY` continua sendo apenas um seletor de cota, não autenticação.
 
 Esses pontos representam oportunidades de evolução do projeto, sem alegar capacidades ainda não implementadas.
 

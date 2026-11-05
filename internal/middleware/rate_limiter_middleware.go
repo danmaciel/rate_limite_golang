@@ -3,16 +3,25 @@ package middleware
 import (
 	"net"
 	"net/http"
+	"time"
 
+	"github.com/danmaciel/rate_limite_golang/internal/observability"
 	"github.com/danmaciel/rate_limite_golang/internal/strategy"
 )
 
 type RateLimiteMiddleware struct {
 	rateLimiter strategy.RateLimiterStrategy
+	metrics *observability.Metrics
 }
 
-func NewRateLimiterMiddleware(r strategy.RateLimiterStrategy) *RateLimiteMiddleware {
-	return &RateLimiteMiddleware{rateLimiter: r}
+// NewRateLimiterMiddleware supports an optional metrics collector.
+// Counters describe the rate limiter's decision, not downstream HTTP outcomes.
+func NewRateLimiterMiddleware(r strategy.RateLimiterStrategy, metrics ...*observability.Metrics) *RateLimiteMiddleware {
+	result := &RateLimiteMiddleware{rateLimiter: r}
+	if len(metrics) > 0 {
+		result.metrics = metrics[0]
+	}
+	return result
 }
 
 // clientIP uses the direct peer address; untrusted forwarding headers are ignored.
@@ -31,14 +40,22 @@ func clientIP(remoteAddr string) (string, bool) {
 
 func (rlm *RateLimiteMiddleware) Handler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		decision := http.StatusOK
+		if rlm.metrics != nil {
+			defer func() { rlm.metrics.Observe(decision, time.Since(start)) }()
+		}
+
 		ip, ok := clientIP(r.RemoteAddr)
 		if !ok {
-			http.Error(w, "invalid remote address", http.StatusBadRequest)
+			decision = http.StatusBadRequest
+			http.Error(w, "invalid remote address", decision)
 			return
 		}
 
 		if rlm.rateLimiter.CheckIsBlocked(ip, r.Header.Get("API_KEY")) {
-			http.Error(w, "you have reached the maximum number of requests or actions allowed within a certain time frame", http.StatusTooManyRequests)
+			decision = http.StatusTooManyRequests
+			http.Error(w, "you have reached the maximum number of requests or actions allowed within a certain time frame", decision)
 			return
 		}
 		next.ServeHTTP(w, r)

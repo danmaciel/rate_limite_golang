@@ -10,6 +10,7 @@ import (
 
 	"github.com/danmaciel/rate_limite_golang/configs"
 	"github.com/danmaciel/rate_limite_golang/internal/infra/persistence"
+	"github.com/danmaciel/rate_limite_golang/internal/observability"
 	rateMiddleware "github.com/danmaciel/rate_limite_golang/internal/middleware"
 	"github.com/danmaciel/rate_limite_golang/internal/ratelimiter"
 	"github.com/go-chi/chi/v5"
@@ -36,7 +37,15 @@ func main() {
 
 	persistenc := persistence.NewRedisStrategy(configs.RedisAddress, configs.RedisPasswd, configs.RedisDBUsed)
 	rateLimite := ratelimiter.NewRateLimiter(persistenc, configs.MaxRequisitionsByIp, configs.BlackListMinutesByIp, tokenRateLimit, configs.BlackListMinutesByToken)
-	rateLimiteMid := rateMiddleware.NewRateLimiterMiddleware(rateLimite)
+	metrics := &observability.Metrics{}
+	rateLimiteMid := rateMiddleware.NewRateLimiterMiddleware(rateLimite, metrics)
+
+	// Metrics stay on loopback only and are never routed through the public API.
+	go func() {
+		if err := http.ListenAndServe("127.0.0.1:9090", metrics.Handler()); err != nil {
+			log.Printf("Diagnostics server stopped: %v", err)
+		}
+	}()
 
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)

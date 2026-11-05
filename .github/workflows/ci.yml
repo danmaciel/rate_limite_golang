@@ -30,3 +30,14 @@ jobs:
       - run: go vet ./...
       - run: go build ./...
       - run: go test ./...
+      - run: go test -race ./...
+      - name: Run HTTP concurrency scenario and verify metrics
+        shell: bash
+        run: |
+          go run . > "$RUNNER_TEMP/rate-limiter.log" 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          python3 scripts/load_test.py --requests 400 --concurrency 20
+      - name: Show application log on failure
+        if: failure()
+        run: cat "$RUNNER_TEMP/rate-limiter.log" 2>/dev/null || true
