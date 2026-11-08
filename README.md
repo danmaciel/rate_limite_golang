@@ -33,7 +33,7 @@ Requer Docker e o plugin Docker Compose:
 docker compose up --build
 ```
 
-A aplicação ficará em `http://localhost:8080`, e o Redis usará a porta interna `6379`.
+A aplicação ficará em `http://127.0.0.1:8080`, publicada pelo Compose **apenas no loopback da máquina**. O Redis também publica a porta `6379` apenas no loopback, para uso local. Isso não substitui autenticação ou controles de rede em uma implantação real.
 
 Exemplo de requisições:
 
@@ -109,7 +109,7 @@ O script usa somente bibliotecas padrão do Python, relata requisições por seg
 3. **Segurança dos tokens:** o header `API_KEY` apenas seleciona uma regra conhecida. Não constitui autenticação ou validação de chaves.
 4. **Tratamento de falhas:** a indisponibilidade do Redis resulta em **fail-closed** (HTTP 429), priorizando não contornar o limite. Isso pode bloquear usuários legítimos, portanto requer observabilidade e decisão de produto para uso real.
 5. **Tempo e expiração:** a nova implementação utiliza uma **janela fixa de 1 segundo** e TTLs Redis para bloqueios. A janela não é deslizante; limites podem ser atravessados em rajadas na fronteira entre janelas.
-6. **Operação:** agora há contadores e buckets de latência locais por instância, além de um cenário automatizado de concorrência. Ainda faltam tracing, métricas agregadas, ensaios de longa duração e implantação real com múltiplas réplicas. A chave de Redis tem prefixos distintos para IP/token, e o cabeçalho `API_KEY` continua sendo apenas um seletor de cota, não autenticação.
+6. **Operação:** há contadores e buckets de latência locais por instância, além de um cenário automatizado de concorrência. O servidor HTTP usa `Shutdown` com limite de 10 segundos para solicitações em andamento após SIGINT/SIGTERM. Ainda faltam tracing, métricas agregadas, ensaios de longa duração e implantação real com múltiplas réplicas. A chave de Redis tem prefixos distintos para IP/token, e o cabeçalho `API_KEY` continua sendo apenas um seletor de cota, não autenticação.
 
 Esses pontos representam oportunidades de evolução do projeto, sem alegar capacidades ainda não implementadas.
 
