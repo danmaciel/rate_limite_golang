@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/danmaciel/rate_limite_golang/configs"
@@ -18,57 +20,65 @@ import (
 )
 
 func main() {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, os.Interrupt)
-
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer cancel()
-
-	configs, err := configs.LoadConfig(".")
+	cfg, err := configs.LoadConfig(".")
 	if err != nil {
 		log.Fatalf("Erro ao carregar configurações: %v", err)
 	}
 
-	tokenRateLimit := map[string]int{
-		"AAA": 10,
-		"BBB": 15,
-	}
-
-	persistenc := persistence.NewRedisStrategy(configs.RedisAddress, configs.RedisPasswd, configs.RedisDBUsed)
-	rateLimite := ratelimiter.NewRateLimiter(persistenc, configs.MaxRequisitionsByIp, configs.BlackListMinutesByIp, tokenRateLimit, configs.BlackListMinutesByToken)
+	// These are demo quota selectors, not authentication credentials.
+	tokenRateLimit := map[string]int{"AAA": 10, "BBB": 15}
+	storage := persistence.NewRedisStrategy(cfg.RedisAddress, cfg.RedisPasswd, cfg.RedisDBUsed)
+	limiter := ratelimiter.NewRateLimiter(storage, cfg.MaxRequisitionsByIp, cfg.BlackListMinutesByIp, tokenRateLimit, cfg.BlackListMinutesByToken)
 	metrics := &observability.Metrics{}
-	rateLimiteMid := rateMiddleware.NewRateLimiterMiddleware(rateLimite, metrics)
-
-	// Metrics stay on loopback only and are never routed through the public API.
-	go func() {
-		if err := http.ListenAndServe("127.0.0.1:9090", metrics.Handler()); err != nil {
-			log.Printf("Diagnostics server stopped: %v", err)
-		}
-	}()
 
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
-	r.Use(rateLimiteMid.Handler)
-
+	r.Use(rateMiddleware.NewRateLimiterMiddleware(limiter, metrics).Handler)
 	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("Hello World!"))
+		_, _ = w.Write([]byte("Hello World!"))
 	})
 
-	go func() {
-		log.Printf("Servidor iniciado em http://localhost:%v\n", configs.WebServerPort)
-		if err := http.ListenAndServe(configs.WebServerPort, r); err != nil {
-			log.Fatalf("Erro ao iniciar servidor: %v", err)
-		}
-	}()
-
-	select {
-	case <-sigCh:
-		log.Println("Shutting down gracefully, CTRL+C pressed...")
-	case <-ctx.Done():
-		log.Println("Shutting down due to other reason...")
+	// Diagnostics are bound to the container/process loopback, never the public API.
+	diagnostics := &http.Server{
+		Addr:              "127.0.0.1:9090",
+		Handler:           metrics.Handler(),
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+	api := &http.Server{
+		Addr:              cfg.WebServerPort,
+		Handler:           r,
+		ReadHeaderTimeout: 5 * time.Second,
 	}
 
-	_, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer shutdownCancel()
+	serveErrors := make(chan error, 2)
+	serve := func(name string, server *http.Server) {
+		go func() {
+			log.Printf("%s listening on %s", name, server.Addr)
+			if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				serveErrors <- err
+			}
+		}()
+	}
+	serve("Diagnostics", diagnostics)
+	serve("HTTP API", api)
+
+	select {
+	case <-ctx.Done():
+		log.Println("Shutdown signal received")
+	case err := <-serveErrors:
+		log.Printf("HTTP server failed: %v", err)
+	}
+
+	// Allow in-flight HTTP requests to complete, with a bounded shutdown.
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	for _, server := range []*http.Server{api, diagnostics} {
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			log.Printf("Graceful shutdown failed (%s): %v", server.Addr, err)
+			_ = server.Close()
+		}
+	}
 }
