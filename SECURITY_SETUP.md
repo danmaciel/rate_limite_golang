@@ -8,3 +8,6 @@
 - O processo trata SIGINT/SIGTERM com encerramento gracioso e timeout de 10 segundos; sinais ou encerramento forçado podem interromper requisicoes.
 - O Redis do Compose usa a linha `7-alpine` por previsibilidade de compatibilidade, mas a tag nao e imutavel. Para maior reproducibilidade, fixe um digest validado em um ambiente controlado.
 - Teste a execucao com e sem `.env` e confirme conectividade com o Redis.
+
+- O mecanismo e fail-closed: falhas de Redis e contadores invalidos bloqueiam requisicoes com HTTP 429. Este codigo nao distingue sobrecarga de indisponibilidade no status HTTP; a decisao deve ser revista antes de expor o servico publicamente.
+- Janelas e bloqueios menores que 1 milissegundo sao rejeitados antes do comando Redis, evitando TTL convertido para zero.
