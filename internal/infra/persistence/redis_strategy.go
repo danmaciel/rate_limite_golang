@@ -97,7 +97,7 @@ return 1
 // Allow enforces a fixed one-second window and a separate temporary block.
 // Prefixes prevent collisions with the legacy JSON keys.
 func (r *RedisStrategy) Allow(key string, limit int, window, block time.Duration) (bool, error) {
-	if limit <= 0 || window <= 0 || block <= 0 || key == "" {
+	if limit <= 0 || window < time.Millisecond || block < time.Millisecond || key == "" {
 		return false, fmt.Errorf("invalid rate limiter parameters")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
