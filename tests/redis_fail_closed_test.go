@@ -45,7 +45,9 @@ func TestRedisRejectsInvalidLimiterParameters(t *testing.T) {
 		{"", 1, time.Second, time.Second},
 		{"invalid-limit", 0, time.Second, time.Second},
 		{"invalid-window", 1, 0, time.Second},
+		{"submillisecond-window", 1, 500*time.Microsecond, time.Second},
 		{"invalid-block", 1, time.Second, 0},
+		{"submillisecond-block", 1, time.Second, 500*time.Microsecond},
 	} {
 		allowed, err := store.Allow(tc.key, tc.limit, tc.window, tc.block)
 		require.Error(t, err)
