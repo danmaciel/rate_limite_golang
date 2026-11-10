@@ -1,6 +1,6 @@
 # Rate Limiter em Go com Redis
 
-Projeto de demonstração de **middleware HTTP para limitação de requisições**, com regras por IP e por tokens conhecidos, persistência dos contadores no Redis e retorno HTTP **429 Too Many Requests** ao exceder o limite.
+Projeto de demonstração de **middleware HTTP para limitação de requisições**, com regras por IP e por tokens conhecidos, persistência dos contadores no Redis e retorno HTTP **429 Too Many Requests** ao exceder o limite e **503 Service Unavailable** quando o Redis falha, sempre negando a requisição nessa falha.
 
 **Stack:** Go, Chi, Redis e Docker Compose.
 
@@ -78,6 +78,7 @@ Exemplo de resposta (valores ilustrativos):
   "requests_total": 100,
   "allowed_total": 5,
   "blocked_total": 95,
+  "unavailable_total": 0,
   "invalid_remote_addr_total": 0,
   "duration_total_microseconds": 24000,
   "duration_buckets": {
@@ -90,7 +91,7 @@ Exemplo de resposta (valores ilustrativos):
 }
 ```
 
-As contagens são mantidas **em memória, por instância**: não são persistidas no Redis nem agregadas entre réplicas. Os buckets de latência são faixas **exclusivas** do tempo do middleware; o total dos buckets corresponde ao total de requisições. O campo `allowed_total` significa que o rate limiter **permitiu continuar**, e não que o endpoint final respondeu com HTTP 200. A métrica `blocked_total` reúne limitação e erros de Redis (política *fail-closed*).
+As contagens são mantidas **em memória, por instância**: não são persistidas no Redis nem agregadas entre réplicas. Os buckets de latência são faixas **exclusivas** do tempo do middleware; o total dos buckets corresponde ao total de requisições. O campo `allowed_total` significa que o rate limiter **permitiu continuar**, e não que o endpoint final respondeu com HTTP 200. A métrica `blocked_total` registra apenas rejeições por cota; `unavailable_total` registra falhas na verificação do Redis. Nessa falha, a requisição não é encaminhada (*fail-closed*) e o middleware retorna HTTP 503.
 
 Para executar uma verificação de carga local, inicie Redis e a aplicação e execute:
 
@@ -107,7 +108,7 @@ O script usa somente bibliotecas padrão do Python, relata requisições por seg
 1. **Concorrência entre réplicas:** as operações de contagem e bloqueio passaram a ser atômicas via script Lua no Redis; testes exercitam dois limitadores com conexões independentes. Ainda faltam testes de carga, comportamento sob falhas de Redis e ambientes distribuídos reais.
 2. **Endereço do cliente:** o middleware extrai IPv4 e IPv6 por `net.SplitHostPort`/`net.ParseIP`, sem substituir IPs por localhost para tokens curtos. **Headers `X-Forwarded-For` e `X-Real-IP` não são confiados** para impedir falsificação. Se o serviço estiver atrás de proxy ou load balancer, a limitação será pelo endereço do proxy até implementar uma cadeia explícita de proxies confiáveis.
 3. **Segurança dos tokens:** o header `API_KEY` apenas seleciona uma regra conhecida. Não constitui autenticação ou validação de chaves.
-4. **Tratamento de falhas:** erros do Redis (inclusive contador inválido) resultam em **fail-closed** (HTTP 429), como o excesso de cota. Os testes verificam que falhas não liberam requisições. **HTTP 429 não distingue falha de infraestrutura de cota excedida** nesta versão; isso pode bloquear usuários legítimos e prejudicar a observabilidade, exigindo uma decisão de contrato HTTP para uso real.
+4. **Tratamento de falhas:** erros do Redis (inclusive contador inválido) resultam em **fail-closed** com HTTP 503, sem encaminhar requisições. O esgotamento real da cota usa HTTP 429. A distinção também aparece nos contadores `unavailable_total` e `blocked_total`. Uma falha prolongada do Redis ainda pode tornar o serviço indisponível; circuit breakers, backoff e recuperação exigem avaliação para implantação real.
 5. **Tempo e expiração:** a implementação utiliza uma **janela fixa de 1 segundo** e TTLs Redis para bloqueios. A persistência rejeita TTLs inferiores a 1 ms, que seriam truncados para zero na conversão para o script Lua. A janela não é deslizante; limites podem ser atravessados em rajadas na fronteira entre janelas.
 6. **Operação:** há contadores e buckets de latência locais por instância, além de um cenário automatizado de concorrência. O servidor HTTP usa `Shutdown` com limite de 10 segundos para solicitações em andamento após SIGINT/SIGTERM. Ainda faltam tracing, métricas agregadas, ensaios de longa duração e implantação real com múltiplas réplicas. A chave de Redis tem prefixos distintos para IP/token, e o cabeçalho `API_KEY` continua sendo apenas um seletor de cota, não autenticação.
 
