@@ -12,6 +12,7 @@ import (
 type Metrics struct {
 	allowed atomic.Uint64
 	blocked atomic.Uint64
+	unavailable atomic.Uint64
 	invalidRemoteAddr atomic.Uint64
 	durationTotalMicros atomic.Uint64
 	requestsUpTo5ms atomic.Uint64
@@ -25,6 +26,7 @@ type Snapshot struct {
 	RequestsTotal uint64 `json:"requests_total"`
 	AllowedTotal uint64 `json:"allowed_total"`
 	BlockedTotal uint64 `json:"blocked_total"`
+	UnavailableTotal uint64 `json:"unavailable_total"`
 	InvalidRemoteAddrTotal uint64 `json:"invalid_remote_addr_total"`
 	DurationTotalMicros uint64 `json:"duration_total_microseconds"`
 	DurationBuckets DurationBuckets `json:"duration_buckets"`
@@ -42,6 +44,8 @@ func (m *Metrics) Observe(status int, took time.Duration) {
 	switch status {
 	case http.StatusTooManyRequests:
 		m.blocked.Add(1)
+	case http.StatusServiceUnavailable:
+		m.unavailable.Add(1)
 	case http.StatusBadRequest:
 		m.invalidRemoteAddr.Add(1)
 	default:
@@ -68,11 +72,12 @@ func (m *Metrics) Observe(status int, took time.Duration) {
 }
 
 func (m *Metrics) Snapshot() Snapshot {
-	allowed, blocked, invalid := m.allowed.Load(), m.blocked.Load(), m.invalidRemoteAddr.Load()
+	allowed, blocked, invalid, unavailable := m.allowed.Load(), m.blocked.Load(), m.invalidRemoteAddr.Load(), m.unavailable.Load()
 	return Snapshot{
-		RequestsTotal: allowed + blocked + invalid,
+		RequestsTotal: allowed + blocked + invalid + unavailable,
 		AllowedTotal: allowed,
 		BlockedTotal: blocked,
+		UnavailableTotal: unavailable,
 		InvalidRemoteAddrTotal: invalid,
 		DurationTotalMicros: m.durationTotalMicros.Load(),
 		DurationBuckets: DurationBuckets{
