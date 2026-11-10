@@ -25,9 +25,9 @@ func NewRateLimiter(persistence strategy.PersistenceStrategy, maxRequisitionsByI
 	}
 }
 
-// CheckIsBlocked is true when the quota is exceeded or Redis cannot be reached.
-// Failing closed prevents an unavailable datastore from bypassing the limit.
-func (r *RateLimiter) CheckIsBlocked(ip, token string) bool {
+// Check distinguishes quota rejection from storage failure. Callers must deny
+// requests on either result; an error must never bypass the rate limiter.
+func (r *RateLimiter) Check(ip, token string) (blocked bool, err error) {
 	limit := r.maxRequisitionsByIp
 	blockDuration := time.Duration(r.minutesInBlackListByIp) * time.Minute
 	key := "ip:" + ip
@@ -39,5 +39,15 @@ func (r *RateLimiter) CheckIsBlocked(ip, token string) bool {
 	}
 
 	allowed, err := r.persistence.Allow(key, limit, time.Second, blockDuration)
-	return err != nil || !allowed
+	if err != nil {
+		return true, err
+	}
+	return !allowed, nil
+}
+
+// CheckIsBlocked is retained for existing users of the limiter. Redis errors
+// still fail closed; HTTP handlers should prefer Check to report HTTP 503.
+func (r *RateLimiter) CheckIsBlocked(ip, token string) bool {
+	blocked, _ := r.Check(ip, token)
+	return blocked
 }

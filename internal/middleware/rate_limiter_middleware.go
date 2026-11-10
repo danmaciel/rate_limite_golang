@@ -53,7 +53,14 @@ func (rlm *RateLimiteMiddleware) Handler(next http.Handler) http.Handler {
 			return
 		}
 
-		if rlm.rateLimiter.CheckIsBlocked(ip, r.Header.Get("API_KEY")) {
+		blocked, err := rlm.rateLimiter.Check(ip, r.Header.Get("API_KEY"))
+		if err != nil {
+			// Fail closed without exposing Redis details to the client.
+			decision = http.StatusServiceUnavailable
+			http.Error(w, "rate limiting is temporarily unavailable", decision)
+			return
+		}
+		if blocked {
 			decision = http.StatusTooManyRequests
 			http.Error(w, "you have reached the maximum number of requests or actions allowed within a certain time frame", decision)
 			return
