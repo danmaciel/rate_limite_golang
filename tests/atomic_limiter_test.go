@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -10,6 +11,7 @@ import (
 	"github.com/danmaciel/rate_limite_golang/internal/infra/persistence"
 	"github.com/danmaciel/rate_limite_golang/internal/ratelimiter"
 	"github.com/stretchr/testify/require"
+	"github.com/go-redis/redis/v8"
 )
 
 func TestAtomicLimitAcrossInstances(t *testing.T) {
@@ -64,4 +66,82 @@ func TestAtomicWindowExpiresAndBlockExpires(t *testing.T) {
 	requireAllowed(false)
 	time.Sleep(400 * time.Millisecond)
 	requireAllowed(true)
+}
+
+// TestFixedWindowAllowsFullQuotaAgainAfterCounterExpiry demonstrates the
+// intentional fixed-window boundary behavior. Each window has an independent
+// quota; this does NOT enforce a sliding-window limit over arbitrary intervals.
+func TestFixedWindowAllowsFullQuotaAgainAfterCounterExpiry(t *testing.T) {
+	const quota = 3
+	const window = 350 * time.Millisecond
+	key := fmt.Sprintf("boundary-%d", time.Now().UnixNano())
+	counterKey := "ratelimit:v2:count:" + key
+	blockKey := "ratelimit:v2:block:" + key
+	store := persistence.NewRedisStrategy("localhost:6379", "", 3)
+	client := redis.NewClient(&redis.Options{Addr: "localhost:6379", DB: 3})
+	defer func() { _ = client.Close() }()
+	t.Cleanup(func() {
+		_ = client.Del(context.Background(), counterKey, blockKey).Err()
+	})
+
+	for i := 0; i < quota; i++ {
+		allowed, err := store.Allow(key, quota, window, time.Second)
+		require.NoError(t, err)
+		require.True(t, allowed, "first window request %d", i+1)
+	}
+	// An allowed request does not create a temporary block.
+	require.EqualValues(t, 0, client.Exists(context.Background(), blockKey).Val())
+
+	// Wait until Redis itself reports expiration; do not rely on a fixed sleep
+	// or system-clock alignment. A fresh window begins with the next request.
+	require.Eventually(t, func() bool {
+		return client.Exists(context.Background(), counterKey).Val() == 0
+	}, 3*time.Second, 10*time.Millisecond, "counter must expire after first window")
+
+	for i := 0; i < quota; i++ {
+		allowed, err := store.Allow(key, quota, window, time.Second)
+		require.NoError(t, err)
+		require.True(t, allowed, "second window request %d", i+1)
+	}
+	// This result is valid for fixed windows even though quota * 2 requests
+	// were permitted across two adjacent windows. A rolling-window guarantee
+	// requires a different algorithm.
+}
+
+func TestBlockSurvivesCounterWindowExpiration(t *testing.T) {
+	key := fmt.Sprintf("block-window-%d", time.Now().UnixNano())
+	counterKey := "ratelimit:v2:count:" + key
+	blockKey := "ratelimit:v2:block:" + key
+	store := persistence.NewRedisStrategy("localhost:6379", "", 3)
+	client := redis.NewClient(&redis.Options{Addr: "localhost:6379", DB: 3})
+	defer func() { _ = client.Close() }()
+	t.Cleanup(func() {
+		_ = client.Del(context.Background(), counterKey, blockKey).Err()
+	})
+	const window = 500 * time.Millisecond
+	const block = 1800 * time.Millisecond
+
+	allowed, err := store.Allow(key, 1, window, block)
+	require.NoError(t, err)
+	require.True(t, allowed)
+	allowed, err = store.Allow(key, 1, window, block)
+	require.NoError(t, err)
+	require.False(t, allowed, "second request exceeds quota and starts block")
+
+	require.Eventually(t, func() bool {
+		return client.Exists(context.Background(), counterKey).Val() == 0
+	}, 3*time.Second, 10*time.Millisecond)
+	require.EqualValues(t, 1, client.Exists(context.Background(), blockKey).Val(),
+		"the block must continue after the counting window expires")
+
+	allowed, err = store.Allow(key, 1, window, block)
+	require.NoError(t, err)
+	require.False(t, allowed, "counter expiry must not bypass an active block")
+
+	require.Eventually(t, func() bool {
+		return client.Exists(context.Background(), blockKey).Val() == 0
+	}, 4*time.Second, 10*time.Millisecond)
+	allowed, err = store.Allow(key, 1, window, block)
+	require.NoError(t, err)
+	require.True(t, allowed, "a fresh request can pass after the block expires")
 }
