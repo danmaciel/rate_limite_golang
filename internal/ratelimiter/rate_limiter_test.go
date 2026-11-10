@@ -59,3 +59,23 @@ func TestInvalidQuotaIsNotSilentlyAllowed(t *testing.T) {
 	require.Equal(t, 0, store.limit)
 	require.Equal(t, time.Duration(0), store.block)
 }
+
+func TestCheckSeparatesRedisErrorsAndQuotaRejections(t *testing.T) {
+	store := &recordingPersistence{err: errors.New("redis down")}
+	limiter := NewRateLimiter(store, 5, 1, nil, 1)
+	blocked, err := limiter.Check("192.0.2.99", "")
+	require.True(t, blocked)
+	require.Error(t, err)
+	require.True(t, limiter.CheckIsBlocked("192.0.2.99", ""))
+
+	store.err = nil
+	store.allow = false
+	blocked, err = limiter.Check("192.0.2.99", "")
+	require.True(t, blocked)
+	require.NoError(t, err)
+
+	store.allow = true
+	blocked, err = limiter.Check("192.0.2.99", "")
+	require.False(t, blocked)
+	require.NoError(t, err)
+}
