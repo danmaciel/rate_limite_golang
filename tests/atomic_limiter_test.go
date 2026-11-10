@@ -118,8 +118,8 @@ func TestBlockSurvivesCounterWindowExpiration(t *testing.T) {
 	t.Cleanup(func() {
 		_ = client.Del(context.Background(), counterKey, blockKey).Err()
 	})
-	const window = 100 * time.Millisecond
-	const block = 1200 * time.Millisecond
+	const window = 500 * time.Millisecond
+	const block = 1800 * time.Millisecond
 
 	allowed, err := store.Allow(key, 1, window, block)
 	require.NoError(t, err)
